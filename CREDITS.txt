@@ -1,0 +1,30 @@
+Allied Front
+============
+
+An original browser game. It borrows the look and feel of early-2000s
+WWII first-person shooters (low-poly models, low-resolution textures,
+fog, a muted palette) but does not use any assets, names, levels, or
+logos from Medal of Honor or any other commercial game.
+
+Code
+----
+Allied Front game code: original, written for this project.
+
+Three.js r181
+  https://github.com/mrdoob/three.js
+  Copyright 2010-2025 Three.js Authors
+  License: MIT
+
+Art
+---
+3D models, textures, and the helmet-and-star app icon were generated
+procedurally for this project (no third-party packs).
+
+Audio
+-----
+All sound effects are synthesized at runtime with the Web Audio API.
+No sampled commercial game audio is used.
+
+Fonts
+-----
+System UI fonts only (Trebuchet MS, Segoe UI, Gill Sans, sans-serif).

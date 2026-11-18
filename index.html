@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Allied Front" />
+  <meta name="theme-color" content="#2a3024" />
+  <meta name="description" content="Allied Front — a small village mission in a foggy, early-2000s style." />
+  <meta name="format-detection" content="telephone=no" />
+  <title>Allied Front</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+  <link rel="icon" href="./icons/favicon.ico" sizes="48x48" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+  <style>
+    :root {
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-l: env(safe-area-inset-left, 0px);
+      --safe-r: env(safe-area-inset-right, 0px);
+      --olive: #3d4a32;
+      --olive-dk: #1c2018;
+      --brass: #d4b46a;
+      --paper: #e8e0d0;
+      --rust: #8a3a22;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; background: #2a3024;
+      position: fixed; inset: 0;
+      touch-action: none;
+      overscroll-behavior: none;
+      font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", "Avenir Next", sans-serif;
+      color: var(--paper);
+    }
+    canvas#c {
+      position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0;
+    }
+    #grade, #grain, #vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    }
+    #grade {
+      background: rgba(72, 70, 42, 0.18);
+      mix-blend-mode: overlay;
+    }
+    #vignette {
+      box-shadow: inset 0 0 140px 28px rgba(10, 12, 8, 0.55), inset 0 -40px 80px rgba(20, 16, 8, 0.25);
+    }
+    #grain {
+      opacity: 0.11;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.85'/%3E%3C/svg%3E");
+      background-size: 180px 180px;
+      animation: grain 0.32s steps(3) infinite;
+    }
+    @keyframes grain {
+      0% { transform: translate(0,0); }
+      25% { transform: translate(-12px, 8px); }
+      50% { transform: translate(8px, -10px); }
+      75% { transform: translate(-6px, -4px); }
+      100% { transform: translate(0,0); }
+    }
+
+    #ui { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+    #ui button, #ui a, #ui .hit, #touch.on, #help.panel, #menu, #pause, #end, #nowebgl { pointer-events: auto; }
+
+    button {
+      font-family: inherit; border: 0; cursor: pointer;
+      color: var(--paper); font-weight: 800; letter-spacing: 0.04em;
+    }
+    button:active { transform: scale(0.97); }
+    button:focus-visible { outline: 3px solid var(--brass); outline-offset: 3px; }
+
+    /* ---- Menus ---- */
+    #menu, #help, #pause, #end, #nowebgl {
+      position: absolute; inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: calc(18px + var(--safe-t)) 22px calc(18px + var(--safe-b));
+      text-align: center;
+      background: linear-gradient(to bottom, rgba(12,14,10,0.55), rgba(12,14,10,0.28) 40%, rgba(12,14,10,0.62));
+    }
+    #menu { display: flex; }
+    #pause, #end { background: rgba(10,12,8,0.68); }
+    #nowebgl { background: #1c2018; display: none; }
+
+    .kicker {
+      font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase;
+      color: var(--brass); font-weight: 800; margin: 0 0 6px;
+      text-shadow: 0 1px 2px #000;
+    }
+    h1.title {
+      font-size: clamp(36px, 10vw, 74px);
+      margin: 0 0 6px; letter-spacing: 0.12em;
+      font-weight: 900; color: #f3ead2;
+      text-shadow: 0 2px 0 #1a1c12, 0 8px 22px rgba(0,0,0,.55);
+    }
+    .subtitle {
+      font-size: clamp(14px, 3.2vw, 18px);
+      margin: 0 0 18px; opacity: 0.92; font-weight: 700;
+      text-shadow: 0 2px 8px #000;
+      max-width: 28rem;
+    }
+    .best { font-size: 13px; opacity: 0.85; min-height: 1.2em; margin: 0 0 14px; }
+
+    .diff {
+      display: flex; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; justify-content: center;
+    }
+    .chip {
+      min-width: 120px; padding: 10px 16px; border-radius: 999px;
+      background: rgba(20, 22, 16, 0.7);
+      border: 2px solid rgba(232,224,208,0.35);
+      font-size: 15px;
+    }
+    .chip.on[data-diff="easy"] { background: linear-gradient(180deg, #6ad08a, #2f9a58); color: #102010; border-color: #d4ffe0; }
+    .chip.on[data-diff="normal"] { background: linear-gradient(180deg, #d4b46a, #9a6e28); color: #2a1c08; border-color: #ffe8b0; }
+    .chip .hint { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0; opacity: 0.9; margin-top: 2px; }
+
+    .btn-row { display: flex; flex-direction: column; gap: 10px; width: min(320px, 100%); align-items: center; }
+    .go-btn, .end-btn {
+      width: 100%; max-width: 320px; padding: 14px 18px;
+      border-radius: 14px; font-size: 18px;
+      border: 2px solid #fff3c4;
+      box-shadow: 0 4px 0 rgba(0,0,0,.35), 0 8px 18px rgba(0,0,0,.3);
+    }
+    #btn-play, #btn-resume, #btn-again { background: linear-gradient(180deg, #ffb347, #e07a20); color: #3a1a00; }
+    #btn-controls, #btn-restart, #btn-menu, #btn-end-menu, #btn-help-back { background: linear-gradient(180deg, #5aa7ff, #2a62d4); color: #fff; border-color: #cfe0ff; }
+    #btn-home, .home-link, #btn-end-home, #btn-pause-home {
+      background: linear-gradient(180deg, #ffe48a, #f0b429); color: #3a2400;
+    }
+    .home-link {
+      display: inline-flex; align-items: center; justify-content: center;
+      text-decoration: none; font-weight: 800; margin-top: 12px;
+      width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 14px;
+      border: 2px solid #fff3c4;
+      box-shadow: 0 4px 0 rgba(0,0,0,.35);
+    }
+    .mute-row { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
+    .icon-btn {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(16, 18, 12, 0.55); border: 2px solid rgba(255,255,255,0.35);
+      font-size: 20px; display: grid; place-items: center; backdrop-filter: blur(6px);
+      color: #fff;
+    }
+
+    #help .help-card {
+      background: rgba(14,16,10,0.82);
+      border: 2px solid rgba(212,180,106,0.45);
+      border-radius: 16px;
+      padding: 18px 20px 16px;
+      max-width: 560px; width: 100%;
+      text-align: left;
+      box-shadow: 0 12px 40px rgba(0,0,0,.45);
+      max-height: min(80vh, 640px); overflow: auto;
+    }
+    #help h2 { margin: 0 0 8px; letter-spacing: 0.08em; color: #f3ead2; text-align: center; }
+    .help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+    @media (max-width: 560px) { .help-grid { grid-template-columns: 1fr; } }
+    .help-grid h3 { margin: 0 0 6px; color: var(--brass); font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .help-grid ul { margin: 0; padding: 0 0 0 1.1em; font-size: 14px; line-height: 1.45; font-weight: 700; }
+    #help .btn-row { margin: 14px auto 0; }
+
+    /* ---- HUD ---- */
+    #hud {
+      position: absolute; inset: 0; display: none;
+    }
+    #hud.on { display: block; }
+    #obj {
+      position: absolute; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+      text-align: center; font-weight: 800; font-size: 15px;
+      text-shadow: 0 2px 8px #000; letter-spacing: 0.04em;
+      background: rgba(12,14,10,0.45); border: 1px solid rgba(232,224,208,0.25);
+      border-radius: 999px; padding: 6px 14px; backdrop-filter: blur(6px);
+      max-width: min(92vw, 520px); pointer-events: none; white-space: nowrap;
+    }
+    #compass {
+      position: absolute; top: calc(48px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+      font-size: 13px; font-weight: 800; letter-spacing: 0.08em;
+      text-shadow: 0 2px 6px #000; opacity: 0.95; pointer-events: none;
+      color: var(--brass);
+    }
+    #hudBtns {
+      position: absolute; top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r));
+      display: flex; gap: 8px; z-index: 4;
+    }
+    #healthWrap {
+      position: absolute; left: calc(12px + var(--safe-l)); bottom: calc(16px + var(--safe-b));
+      width: min(220px, 42vw);
+      pointer-events: none;
+    }
+    body.show-touch #healthWrap { bottom: calc(150px + var(--safe-b)); left: calc(22px + var(--safe-l)); width: min(180px, 34vw); }
+    #healthWrap .label { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; margin-bottom: 3px; text-shadow: 0 1px 4px #000; }
+    #healthBar {
+      height: 14px; border-radius: 7px; background: rgba(10,12,8,0.65);
+      border: 2px solid rgba(232,224,208,0.4); overflow: hidden;
+    }
+    #healthFill {
+      height: 100%; width: 100%;
+      background: linear-gradient(180deg, #8fe08a, #2f9a48);
+      transform-origin: left center;
+    }
+    #healthFill.mid { background: linear-gradient(180deg, #e8d46a, #c48a18); }
+    #healthFill.low { background: linear-gradient(180deg, #ff8a6a, #c23018); }
+    #ammo {
+      position: absolute; right: calc(12px + var(--safe-r)); bottom: calc(16px + var(--safe-b));
+      text-align: right; pointer-events: none; text-shadow: 0 2px 8px #000;
+    }
+    body.show-touch #ammo {
+      top: calc(58px + var(--safe-t));
+      right: calc(12px + var(--safe-r));
+      bottom: auto;
+    }
+    #ammo .wname { font-size: 12px; letter-spacing: 0.16em; font-weight: 800; color: var(--brass); }
+    #ammo .count { font-size: 28px; font-weight: 900; line-height: 1; }
+    #ammo .res { font-size: 14px; opacity: 0.8; font-weight: 800; }
+
+    #crosshair {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      width: 22px; height: 22px; pointer-events: none;
+    }
+    #crosshair .h, #crosshair .v {
+      position: absolute; background: rgba(243,234,210,0.85);
+      box-shadow: 0 0 2px #000;
+    }
+    #crosshair .h { left: 4px; right: 4px; height: 2px; top: 10px; }
+    #crosshair .v { top: 4px; bottom: 4px; width: 2px; left: 10px; }
+    #crosshair.ads { width: 10px; height: 10px; }
+    #crosshair.ads .h, #crosshair.ads .v { background: rgba(212,180,106,0.95); }
+    #crosshair.hit { }
+    #crosshair.hit .h, #crosshair.hit .v { background: #8fe08a; }
+
+    #hurt {
+      position: absolute; inset: 0; pointer-events: none;
+      box-shadow: inset 0 0 80px 20px rgba(140, 16, 8, 0);
+      transition: box-shadow 0.15s;
+    }
+    #hurt.on { box-shadow: inset 0 0 90px 28px rgba(140, 16, 8, 0.45); }
+
+    #hint {
+      position: absolute; left: 50%; top: 66%; transform: translate(-50%,-50%);
+      font-weight: 800; font-size: 16px; text-shadow: 0 2px 8px #000;
+      pointer-events: none; opacity: 0; transition: opacity 0.25s;
+      text-align: center;
+    }
+    #hint.on { opacity: 1; }
+
+    /* ---- Countdown ---- */
+    #countdown {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      font-size: clamp(64px, 18vw, 140px); font-weight: 900;
+      color: #f3ead2; text-shadow: 0 4px 0 #1a1c12, 0 12px 28px #000;
+      letter-spacing: 0.06em; pointer-events: none;
+    }
+
+    /* ---- Touch ---- */
+    #touch {
+      position: absolute; inset: 0; display: none; z-index: 3;
+    }
+    body.show-touch.in-mission #touch { display: block; }
+    .stick-base {
+      position: absolute;
+      left: calc(22px + var(--safe-l));
+      bottom: calc(22px + var(--safe-b));
+      width: 128px; height: 128px; border-radius: 50%;
+      background: rgba(12,14,10,0.32);
+      border: 2px solid rgba(232,224,208,0.35);
+    }
+    .stick-knob {
+      position: absolute; left: 50%; top: 50%; width: 58px; height: 58px;
+      margin: -29px 0 0 -29px; border-radius: 50%;
+      background: rgba(232,224,208,0.38);
+      border: 2px solid rgba(243,234,210,0.6);
+    }
+    .tbtn {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(12,14,10,0.42);
+      border: 2px solid rgba(232,224,208,0.4);
+      color: #f3ead2; font-weight: 900;
+      display: grid; place-items: center;
+      letter-spacing: 0.04em;
+    }
+    .tbtn:active, .tbtn.held { background: rgba(224, 122, 32, 0.55); border-color: #ffe08a; }
+    #btn-fire-r {
+      right: calc(22px + var(--safe-r));
+      bottom: calc(22px + var(--safe-b));
+      width: 84px; height: 84px; font-size: 14px;
+    }
+    #btn-fire-l {
+      left: calc(158px + var(--safe-l));
+      bottom: calc(28px + var(--safe-b));
+      width: 62px; height: 62px; font-size: 12px;
+    }
+    #btn-aim {
+      right: calc(28px + var(--safe-r));
+      bottom: calc(118px + var(--safe-b));
+      width: 62px; height: 62px; font-size: 12px;
+    }
+    #btn-reload {
+      right: calc(100px + var(--safe-r));
+      bottom: calc(100px + var(--safe-b));
+      width: 56px; height: 56px; font-size: 12px;
+    }
+    #lookZone {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 58%;
+    }
+
+    #orient {
+      display: none;
+      position: absolute; top: calc(8px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+      background: rgba(12,14,10,0.8); border: 1px solid var(--brass);
+      border-radius: 999px; padding: 6px 12px 6px 16px; font-size: 13px; font-weight: 800;
+      z-index: 6; align-items: center; gap: 8px; white-space: nowrap;
+      pointer-events: auto;
+    }
+    body.portrait-touch #orient { display: flex; }
+    #orient button { background: none; color: var(--brass); font-size: 16px; padding: 0 4px; }
+
+    .end-stat { margin: 4px 0; font-weight: 800; font-size: 16px; text-shadow: 0 2px 6px #000; }
+    .big { font-size: clamp(32px, 9vw, 56px); margin: 0 0 8px; text-shadow: 0 3px 0 #1a1c12, 0 8px 18px rgba(0,0,0,.45); color: #fff4c8; }
+    .pause-sub { font-size: 15px; font-weight: 700; opacity: .9; margin-bottom: 8px; }
+
+    @media (max-height: 440px) {
+      .kicker, .best { display: none; }
+      h1.title { font-size: clamp(22px, 8vh, 40px); letter-spacing: 0.08em; margin-bottom: 2px; }
+      .subtitle { font-size: 12px; margin-bottom: 8px; }
+      .chip { padding: 6px 12px; min-width: 96px; }
+      .chip .hint { display: none; }
+      .diff { margin-bottom: 8px; }
+      .go-btn, .end-btn, .home-link { padding: 8px 14px; font-size: 15px; }
+      .mute-row { margin-top: 6px; }
+      #menu, #help, #pause, #end, #nowebgl { padding: 8px 16px; overflow: auto; }
+      .stick-base { width: 110px; height: 110px; }
+      #btn-fire-r { width: 72px; height: 72px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="grade"></div>
+  <div id="vignette"></div>
+  <div id="grain"></div>
+
+  <div id="ui">
+    <div id="hud">
+      <div id="obj">Clear the village and reach the radio</div>
+      <div id="compass">RADIO  ·  — m</div>
+      <div id="hudBtns">
+        <button class="icon-btn" id="btn-mute-hud" type="button" aria-label="Mute">🔊</button>
+        <button class="icon-btn" id="btn-pause" type="button" aria-label="Pause">❚❚</button>
+      </div>
+      <div id="crosshair" aria-hidden="true"><span class="h"></span><span class="v"></span></div>
+      <div id="hurt"></div>
+      <div id="hint"></div>
+      <div id="healthWrap">
+        <div class="label">HEALTH</div>
+        <div id="healthBar"><div id="healthFill"></div></div>
+      </div>
+      <div id="ammo">
+        <div class="wname" id="wname">RIFLE</div>
+        <div><span class="count" id="amag">8</span> <span class="res" id="ares">/ 40</span></div>
+      </div>
+    </div>
+
+    <div id="touch">
+      <div id="lookZone"></div>
+      <div class="stick-base" id="stick">
+        <div class="stick-knob" id="knob"></div>
+      </div>
+      <button class="tbtn" id="btn-fire-l" type="button">FIRE</button>
+      <button class="tbtn" id="btn-fire-r" type="button">FIRE</button>
+      <button class="tbtn" id="btn-aim" type="button">AIM</button>
+      <button class="tbtn" id="btn-reload" type="button">R</button>
+    </div>
+
+    <div id="countdown"></div>
+
+    <div id="orient">
+      <span>Turn your device sideways for the best view</span>
+      <button type="button" id="btn-orient-dismiss" aria-label="Dismiss">✕</button>
+    </div>
+
+    <div id="menu">
+      <div class="kicker">A village mission  ·  1944</div>
+      <h1 class="title">ALLIED FRONT</h1>
+      <p class="subtitle">Clear a foggy French village and reach the radio. No gore — just a short, fair fight.</p>
+      <div class="best" id="bestLine"></div>
+      <div class="diff" role="group" aria-label="Difficulty">
+        <button class="chip on" type="button" data-diff="easy" id="chip-easy">Easy<span class="hint">More health, gentler foes</span></button>
+        <button class="chip" type="button" data-diff="normal" id="chip-normal">Normal<span class="hint">A fair fight</span></button>
+      </div>
+      <div class="btn-row">
+        <button class="go-btn" id="btn-play" type="button">▶  Play</button>
+        <button class="go-btn" id="btn-controls" type="button">Controls</button>
+        <a class="home-link" id="menuHome" href="https://koebelsundries.github.io/kids-games/">🏠 All Games</a>
+      </div>
+      <div class="mute-row">
+        <button class="icon-btn" id="btn-mute" type="button" aria-label="Mute">🔊</button>
+      </div>
+    </div>
+
+    <div id="help">
+      <div class="help-card">
+        <h2>CONTROLS</h2>
+        <div class="help-grid">
+          <div>
+            <h3>Computer</h3>
+            <ul>
+              <li>W A S D — move</li>
+              <li>Mouse — look (click to capture)</li>
+              <li>Left click — fire</li>
+              <li>Right click — aim</li>
+              <li>R — reload</li>
+              <li>1 / 2 — rifle / SMG</li>
+              <li>Shift — sprint</li>
+              <li>Esc — pause</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Phone &amp; tablet</h3>
+            <ul>
+              <li>Left stick — move</li>
+              <li>Drag the right side — look</li>
+              <li>FIRE buttons on both sides (right is the main one)</li>
+              <li>AIM and R to aim and reload</li>
+              <li>Push the stick all the way to sprint</li>
+              <li>🏠 or ❚❚ — pause menu</li>
+            </ul>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="go-btn" id="btn-help-back" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause">
+      <h2 class="big">Paused</h2>
+      <div class="pause-sub">Take a break — where to next?</div>
+      <div class="btn-row">
+        <button class="end-btn" id="btn-resume" type="button">▶ Keep Playing</button>
+        <button class="end-btn" id="btn-restart" type="button">↻ Restart</button>
+        <button class="end-btn" id="btn-menu" type="button">Game Menu</button>
+        <button class="end-btn" id="btn-pause-home" type="button">🏠 All Games</button>
+      </div>
+    </div>
+
+    <div id="end">
+      <h2 class="big" id="endTitle">Village secure!</h2>
+      <div class="end-stat" id="endStats"></div>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="end-btn" id="btn-again" type="button">↻ Play Again</button>
+        <button class="end-btn" id="btn-end-menu" type="button">Game Menu</button>
+        <button class="end-btn" id="btn-end-home" type="button">🏠 All Games</button>
+      </div>
+    </div>
+
+    <div id="nowebgl">
+      <h2 class="big">Need a 3D browser</h2>
+      <p class="subtitle">Allied Front needs WebGL, which this browser could not start. Try another browser, or turn on hardware acceleration.</p>
+    </div>
+  </div>
+
+  <script type="module" src="./js/game.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
