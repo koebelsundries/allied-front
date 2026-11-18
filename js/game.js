@@ -547,6 +547,56 @@ function hitsAABB(px, py, pz, r, h) {
   }
   return null;
 }
+
+const ENEMY_R = 0.4, ENEMY_H = 1.7;
+function blockedAt(x, z, r = ENEMY_R, h = ENEMY_H) {
+  return !!hitsAABB(x, 0, z, r, h);
+}
+/** Nudge a point out of colliders. Prefers the open lane (x toward 0). */
+function nudgeFree(x, z, r = ENEMY_R) {
+  if (!blockedAt(x, z, r)) return { x, z };
+  const dists = [0.35, 0.6, 0.9, 1.3, 1.8, 2.4, 3.2, 4.2, 5.5];
+  // try toward lane first, then a 16-way ring
+  for (const dist of dists) {
+    const prefer = x > 0 ? -1 : 1;
+    const dirs = [
+      [prefer, 0], [prefer, -1], [prefer, 1], [0, -1], [0, 1],
+      [-prefer, 0], [-prefer, -1], [-prefer, 1]
+    ];
+    for (const [dx, dz] of dirs) {
+      const len = Math.hypot(dx, dz) || 1;
+      const nx = x + (dx / len) * dist, nz = z + (dz / len) * dist;
+      if (!blockedAt(nx, nz, r)) return { x: nx, z: nz };
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8;
+      const nx = x + Math.cos(a) * dist, nz = z + Math.sin(a) * dist;
+      if (!blockedAt(nx, nz, r)) return { x: nx, z: nz };
+    }
+  }
+  const fallback = { x: 0, z: clamp(z, -34, 24) };
+  if (!blockedAt(fallback.x, fallback.z, r)) return fallback;
+  return { x: 0, z: -20 };
+}
+function sanitizePoint(x, z, r = ENEMY_R) {
+  const n = nudgeFree(x, z, r);
+  return n;
+}
+function sanitizeCoverPoints() {
+  for (const c of coverPts) {
+    const n = sanitizePoint(c.x, c.z, ENEMY_R);
+    c.x = n.x; c.z = n.z;
+  }
+}
+function enemyBlockedReport(r = ENEMY_R) {
+  const out = [];
+  for (let i = 0; i < enemies.length; i++) {
+    const e = enemies[i];
+    if (e.hp <= 0) continue;
+    if (blockedAt(e.pos.x, e.pos.z, r)) out.push({ i, x: e.pos.x, z: e.pos.z });
+  }
+  return out;
+}
 function rayAABB(ox, oy, oz, dx, dy, dz, c, maxT) {
   let tmin = 0, tmax = maxT;
   const min = [c.minx, c.miny, c.minz], max = [c.maxx, c.maxy, c.maxz], o = [ox, oy, oz], d = [dx, dy, dz];
@@ -1010,6 +1060,7 @@ function buildLevel() {
   addCollider(8.2, 0, -13, 1.2, 0.9, 8);
 
   // Pickup spawn markers stored; actual pickups placed on start
+  sanitizeCoverPoints();
   levelReady = true;
 }
 
@@ -1158,6 +1209,7 @@ function resetLoadout(diff) {
   player.reloading = 0;
   player.ads = 0;
   player.wantAds = false;
+  if ($("btn-aim")) syncAimBtn();
   showWeapon();
 }
 
@@ -1452,27 +1504,36 @@ function spawnEnemies() {
     if (e.mesh.parent) e.mesh.parent.remove(e.mesh);
   }
   enemies.length = 0;
+  // Spawns sit in the open (courtyards / lane), never inside solid buildings.
+  // sanitizePoint still validates every spawn, patrol waypoint, and later cover use.
   const spots = [
-    { x: -8.0, z: -9.0, patrol: [-8, -9, -7.5, -3.2], cover: true },
-    { x: -10.2, z: -2.4, patrol: null, cover: true },
+    { x: -5.6, z: -9.2, patrol: [-5.6, -9.2, -5.4, -3.6], cover: true },
+    { x: -6.4, z: -0.6, patrol: null, cover: true },
     { x: -3.4, z: 5.1, patrol: null, cover: true },
-    { x: 7.6, z: -0.8, patrol: [7.6, -0.8, 7.2, 2.5], cover: true },
-    { x: -8.2, z: 12.2, patrol: [-8.2, 12.2, -8.0, 8.5], cover: true },
+    { x: 6.6, z: -0.8, patrol: [6.6, -0.8, 6.4, 3.0], cover: true },
+    { x: -7.2, z: 12.2, patrol: [-7.2, 12.2, -7.0, 8.2], cover: true },
     { x: 3.3, z: 15.0, patrol: null, cover: true },
     { x: -2.6, z: 20.5, patrol: null, cover: true },
-    { x: 0.8, z: 24.6, patrol: [0.8, 24.6, -2.0, 24.2], cover: true }
+    { x: 0.8, z: 24.4, patrol: [0.8, 24.4, -2.0, 24.0], cover: true }
   ];
   for (const s of spots) {
+    const spawn = sanitizePoint(s.x, s.z, ENEMY_R);
+    let patrol = s.patrol;
+    if (patrol) {
+      const a = sanitizePoint(patrol[0], patrol[1], ENEMY_R);
+      const b = sanitizePoint(patrol[2], patrol[3], ENEMY_R);
+      patrol = [a.x, a.z, b.x, b.z];
+    }
     const meshG = makeSoldier();
-    meshG.position.set(s.x, 0, s.z);
+    meshG.position.set(spawn.x, 0, spawn.z);
     world.add(meshG);
     enemies.push({
       mesh: meshG,
-      pos: new THREE.Vector3(s.x, 0, s.z),
-      yaw: Math.PI, // face south (toward player). mesh forward is +Z? group default +Z. We'll set rotation.y = yaw where we want them to face.
+      pos: new THREE.Vector3(spawn.x, 0, spawn.z),
+      yaw: Math.PI, // face south (toward player)
       hp: 100,
       state: "patrol",
-      patrol: s.patrol,
+      patrol,
       patrolI: 0,
       react: 0,
       shootT: rand(0.2, 0.8),
@@ -1489,8 +1550,8 @@ function spawnEnemies() {
 function nearestCover(e) {
   let best = null, bestD = 8;
   for (const c of coverPts) {
+    if (blockedAt(c.x, c.z, ENEMY_R)) continue;
     const d = Math.hypot(c.x - e.pos.x, c.z - e.pos.z);
-    // prefer cover closer to enemy than to running into the player
     const toP = Math.hypot(c.x - player.pos.x, c.z - player.pos.z);
     if (d < bestD && toP > 3.5) { bestD = d; best = c; }
   }
@@ -1532,12 +1593,18 @@ function hurtEnemy(e, dmg, point) {
   }
 }
 
+function unstuckEnemy(e) {
+  if (!blockedAt(e.pos.x, e.pos.z, ENEMY_R)) return;
+  const n = nudgeFree(e.pos.x, e.pos.z, ENEMY_R);
+  e.pos.set(n.x, 0, n.z);
+}
 function enemyMoveToward(e, tx, tz, speed, dt) {
+  unstuckEnemy(e);
   const dx = tx - e.pos.x, dz = tz - e.pos.z;
   const dist = Math.hypot(dx, dz);
   if (dist < 0.15) return dist;
   const vx = (dx / dist) * speed * dt, vz = (dz / dist) * speed * dt;
-  const r = 0.3, h = 1.7;
+  const r = ENEMY_R, h = ENEMY_H;
   if (!hitsAABB(e.pos.x + vx, 0, e.pos.z, r, h)) e.pos.x += vx;
   if (!hitsAABB(e.pos.x, 0, e.pos.z + vz, r, h)) e.pos.z += vz;
   e.yaw = Math.atan2(dx, dz);
@@ -1559,6 +1626,7 @@ function updateEnemies(dt) {
       continue;
     }
     e.mesh.rotation.x = 0;
+    unstuckEnemy(e);
     if (e.flashT > 0) {
       e.flashT -= dt;
       if (e.flashT <= 0 && p.flash) p.flash.visible = false;
@@ -1904,8 +1972,8 @@ document.addEventListener("pointerlockchange", () => {
 document.addEventListener("mousemove", (e) => {
   if (game.mode !== "play" && game.mode !== "count") return;
   if (document.pointerLockElement === canvas) {
-    const sens = (player.ads > 0.5 ? 0.00115 : 0.0022);
-    applyLook(e.movementX, e.movementY, sens);
+    const aimed = player.wantAds || player.ads > 0.05;
+    applyLook(e.movementX, e.movementY, 0.0022 * (aimed ? 0.6 : 1));
   }
 });
 document.addEventListener("mousedown", (e) => {
@@ -1968,23 +2036,40 @@ function setKnob(nx, ny) {
   knobEl.style.transform = `translate(${nx * r}px, ${ny * r}px)`;
 }
 
+function syncAimBtn() {
+  $("btn-aim").classList.toggle("held", !!player.wantAds);
+  $("btn-aim").classList.toggle("on", !!player.wantAds);
+}
+function touchLookSens() {
+  const aimed = player.wantAds || player.ads > 0.05;
+  return 0.0032 * (aimed ? 0.6 : 1);
+}
+function applyTouchLook(dx, dy) {
+  if (game.mode !== "play" && game.mode !== "count") return;
+  // never zero — aimed look is just a bit slower
+  applyLook(dx, dy, touchLookSens());
+}
+
 function onPtrDown(e) {
   if (game.mode === "menu" || game.mode === "help" || game.mode === "end" || game.mode === "win" || game.mode === "lose") return;
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (e.pointerType === "touch" || e.pointerType === "pen") enableTouchUI();
+  if (pointers.has(e.pointerId)) return;
   const role = roleForTouch(e.clientX, e.clientY, e.target);
   if (role === "ui") return;
-  pointers.set(e.pointerId, { role, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY });
+  pointers.set(e.pointerId, { role, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: 0 });
   if (role === "fireR" || role === "fireL") {
     player.fireHeld = true;
     player.fireClicked = true;
     $(role === "fireR" ? "btn-fire-r" : "btn-fire-l").classList.add("held");
   }
-  if (role === "aim") { player.wantAds = true; $("btn-aim").classList.add("held"); }
-  if (role === "reload") tryReload(false);
-  if (e.target.setPointerCapture) {
-    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+  if (role === "aim") {
+    // Toggle on touch so a thumb is free to look. (Desktop right-click stays a hold.)
+    player.wantAds = !player.wantAds;
+    syncAimBtn();
   }
+  if (role === "reload") tryReload(false);
+  // Do not setPointerCapture: on iOS it can swallow a second look finger.
   e.preventDefault();
 }
 function onPtrMove(e) {
@@ -1992,10 +2077,11 @@ function onPtrMove(e) {
   if (!p) return;
   const dx = e.clientX - p.lx, dy = e.clientY - p.ly;
   p.lx = e.clientX; p.ly = e.clientY;
-  if (p.role === "look") {
-    const sens = (player.ads > 0.5 ? 0.0018 : 0.0032);
-    if (game.mode === "play" || game.mode === "count") applyLook(dx, dy, sens);
-  }
+  p.moved += Math.hypot(dx, dy);
+  // Look from the right half, and fire-and-drag / aim-and-drag (right FIRE, AIM, R).
+  // A 6px deadzone keeps a mere tap from twitching the camera.
+  const lookRole = p.role === "look" || p.role === "fireR" || p.role === "aim" || p.role === "reload";
+  if (lookRole && (p.role === "look" || p.moved > 6)) applyTouchLook(dx, dy);
   if (p.role === "stick") {
     const rect = stickEl.getBoundingClientRect();
     const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
@@ -2021,12 +2107,7 @@ function onPtrUp(e) {
     pointers.forEach((q) => { if (q.role === "fireR" || q.role === "fireL") still = true; });
     if (!still) player.fireHeld = false;
   }
-  if (p.role === "aim") {
-    // check other aim pointers
-    let still = false;
-    pointers.forEach((q) => { if (q.role === "aim") still = true; });
-    if (!still) { player.wantAds = false; $("btn-aim").classList.remove("held"); }
-  }
+  // AIM is a toggle — releasing the button must not clear sights.
   if (p.role === "stick") {
     let still = false;
     pointers.forEach((q) => { if (q.role === "stick") still = true; });
@@ -2034,17 +2115,19 @@ function onPtrUp(e) {
   }
 }
 const touchRoot = $("touch");
-for (const ev of ["pointerdown"]) touchRoot.addEventListener(ev, onPtrDown);
-window.addEventListener("pointermove", onPtrMove);
+touchRoot.addEventListener("pointerdown", onPtrDown, { passive: false });
+window.addEventListener("pointermove", onPtrMove, { passive: false });
 window.addEventListener("pointerup", onPtrUp);
 window.addEventListener("pointercancel", onPtrUp);
 window.addEventListener("pointerdown", (e) => {
-  // also capture look on the canvas / hud empty areas when not hitting a menu
   if (!document.body.classList.contains("show-touch")) return;
-  if (e.target === canvas || e.target === $("hud") || e.target === $("lookZone") || e.target === $("crosshair") || e.target.id === "hurt") {
+  if (pointers.has(e.pointerId)) return;
+  // Second finger (or a look drag) on the world / empty right half.
+  const t = e.target;
+  if (t === canvas || t === $("hud") || t === $("lookZone") || t === $("crosshair") || (t && t.id === "hurt") || t === $("ui") || t === document.body) {
     onPtrDown(e);
   }
-}, { capture: true });
+}, { capture: true, passive: false });
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && game.mode === "play") pauseGame();
@@ -2239,6 +2322,7 @@ function snapshot() {
     player: {
       x: player.pos.x, y: player.pos.y, z: player.pos.z,
       yaw: player.yaw, pitch: player.pitch,
+      wantAds: player.wantAds, ads: player.ads,
       hp: player.hp, maxHp: player.maxHp,
       weapon: player.weapon,
       mag: player.mags[player.weapon],
@@ -2271,7 +2355,7 @@ window.__AF = {
   fire() { player.forceFire = true; player.fireClicked = true; player.fireHeld = true; fireWeapon(); player.fireHeld = false; return game.lastShot; },
   get lastShot() { return game.lastShot; },
   holdFire(v) { player.fireHeld = !!v; if (v) player.fireClicked = true; },
-  aim(v) { player.wantAds = !!v; },
+  aim(v) { player.wantAds = !!v; if (typeof syncAimBtn === "function") syncAimBtn(); },
   reload() { tryReload(false); },
   switchWeapon,
   teleport(x, y, z) { player.pos.set(x, y || 0, z); setCameraFromPlayer(); },
@@ -2280,7 +2364,28 @@ window.__AF = {
   killEnemy(i) { if (enemies[i]) hurtEnemy(enemies[i], 999, enemies[i].pos.clone().setY(1.2)); },
   killAll() { for (const e of enemies) if (e.hp > 0) hurtEnemy(e, 999, e.pos.clone().setY(1.2)); },
   win() { onWin(); },
-  lose() { player.hp = 0; updateHealthHUD(); onLose(); }
+  lose() { player.hp = 0; updateHealthHUD(); onLose(); },
+  blockedEnemies(r) { return enemyBlockedReport(r); },
+  simulate(seconds) {
+    const step = 1 / 30;
+    if (game.mode === "count") { game.countT = 0; beginPlay(); }
+    if (game.mode !== "play") {
+      // run AI poses even from menu after a start
+      if (!enemies.length) spawnEnemies();
+      game.mode = "play";
+      game.graceUntil = game.clock;
+    }
+    game.graceUntil = Math.min(game.graceUntil, game.clock);
+    let left = seconds;
+    while (left > 0) {
+      const dt = Math.min(step, left);
+      game.clock += dt;
+      game.playTime += dt;
+      updateEnemies(dt);
+      left -= dt;
+    }
+    return { alive: enemiesAlive(), blocked: enemyBlockedReport(), enemies: enemies.map((e, i) => ({ i, hp: e.hp, x: e.pos.x, z: e.pos.z })) };
+  }
 };
 
 /* ---------------- Boot ---------------- */

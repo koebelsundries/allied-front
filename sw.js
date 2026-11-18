@@ -1,5 +1,5 @@
 /* Allied Front - offline cache. Scope: this game root only. */
-const CACHE = "allied-front-v1";
+const CACHE = "allied-front-v2";
 const CORE = [
   "./",
   "./index.html",

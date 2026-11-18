@@ -287,7 +287,7 @@
       display: grid; place-items: center;
       letter-spacing: 0.04em;
     }
-    .tbtn:active, .tbtn.held { background: rgba(224, 122, 32, 0.55); border-color: #ffe08a; }
+    .tbtn:active, .tbtn.held, .tbtn.on { background: rgba(224, 122, 32, 0.55); border-color: #ffe08a; }
     #btn-fire-r {
       right: calc(22px + var(--safe-r));
       bottom: calc(22px + var(--safe-b));
@@ -428,8 +428,8 @@
             <ul>
               <li>Left stick — move</li>
               <li>Drag the right side — look</li>
-              <li>FIRE buttons on both sides (right is the main one)</li>
-              <li>AIM and R to aim and reload</li>
+              <li>FIRE buttons on both sides (right is the main one; drag it to look while firing)</li>
+              <li>AIM toggles sights — then drag to look. R reloads.</li>
               <li>Push the stick all the way to sprint</li>
               <li>🏠 or ❚❚ — pause menu</li>
             </ul>
